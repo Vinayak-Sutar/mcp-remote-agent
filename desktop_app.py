@@ -13,11 +13,12 @@ import ollama
 
 SYSTEM_PROMPT = """You are an intelligent Ubuntu Desktop MCP assistant.
 YOUR CRITICAL RULES:
-1. You have access to real system tools (set_volume, change_brightness, search_youtube, play_youtube_video).
+1. You have access to real system tools (set_volume, browser_youtube_search, play_youtube_video).
 2. FIRST, carefully analyze the user's intent. Ask yourself: "Does this request explicitly require me to modify a system setting or control media?"
 3. If the user is just chatting, asking a general question, or seeking information, DO NOT use any tools. Just provide a natural text response.
 4. Only if the answer to step 2 is YES, you MUST use the appropriate tool.
-5. If using a tool, NEVER write conversational text or explain your intentions. YOU MUST ATTACH A JSON ARRAY containing the tool call. For example:
+5. If the user uses the word 'PLAY', you MUST use `play_youtube_video`. DO NOT use `browser_youtube_search`.
+6. If using a tool, NEVER write conversational text or explain your intentions. YOU MUST ATTACH A JSON ARRAY containing the tool call. For example:
 [{"name": "set_volume", "arguments": {"level": 100}}]
 """
 
@@ -170,7 +171,8 @@ class ChatApp(QMainWindow):
 
                 # Ollama Py SDK v0.4+ returns a Model object, not a raw dict. We must convert it safely.
                 raw_message = response.get('message', {})
-                message_dict = dict(raw_message) if isinstance(raw_message, dict) else (getattr(raw_message, 'model_dump', lambda: dict(raw_message))())
+                message_dict = dict(raw_message) if isinstance(raw_message, dict) else (
+                    getattr(raw_message, 'model_dump', lambda: dict(raw_message))())
 
                 # If Ollama hallucinates the JSON string inside the message text
                 content_str = message_dict.get('content', '') or ''
@@ -178,10 +180,11 @@ class ChatApp(QMainWindow):
 
                 import re
                 import json
-                
+
                 # Check for array of objects anywhere in output
-                json_match = re.search(r'\[\s*\{.*"name"\s*:\s*".*\}\s*\]', content_str, re.DOTALL)
-                
+                json_match = re.search(
+                    r'\[\s*\{.*"name"\s*:.*\}\s*\]', content_str, re.DOTALL)
+
                 if not tool_calls and json_match:
                     try:
                         extracted = json.loads(json_match.group(0))
@@ -199,7 +202,8 @@ class ChatApp(QMainWindow):
                             })
                         message_dict['tool_calls'] = tool_calls
                         # Remove the JSON text from the chat display log
-                        message_dict['content'] = content_str[:json_match.start()].strip()
+                        message_dict['content'] = content_str[:json_match.start()].strip(
+                        )
                     except Exception as e:
                         print(f"Fallback JSON parse error: {e}", flush=True)
 
@@ -209,14 +213,18 @@ class ChatApp(QMainWindow):
                     for tool_call in message_dict['tool_calls']:
                         try:
                             # Handle both object notations and dictionary notations safely
-                            fn = tool_call.get('function') if isinstance(tool_call, dict) else tool_call.function
-                            func_name = fn.get('name') if isinstance(fn, dict) else fn.name
-                            func_args = fn.get('arguments') if isinstance(fn, dict) else fn.arguments
-                            
+                            fn = tool_call.get('function') if isinstance(
+                                tool_call, dict) else tool_call.function
+                            func_name = fn.get('name') if isinstance(
+                                fn, dict) else fn.name
+                            func_args = fn.get('arguments') if isinstance(
+                                fn, dict) else fn.arguments
+
                             if isinstance(func_args, str):
                                 func_args = json.loads(func_args)
 
-                            self.append_to_chat("System", f"⚡ Running Tool: {func_name}({func_args})", "#999999")
+                            self.append_to_chat(
+                                "System", f"⚡ Running Tool: {func_name}({func_args})", "#999999")
 
                             tool_result = await session.call_tool(func_name, arguments=func_args)
                             result_text = tool_result.content[0].text
@@ -224,7 +232,8 @@ class ChatApp(QMainWindow):
                             result_text = f"Error executing tool: {str(e)}"
                             func_name = str(tool_call)
 
-                        self.append_to_chat("System", f"✅ Tool Result: {result_text}", "#999999")
+                        self.append_to_chat(
+                            "System", f"✅ Tool Result: {result_text}", "#999999")
 
                         self.chat_history.append({
                             'role': 'tool',
@@ -239,12 +248,15 @@ class ChatApp(QMainWindow):
                         messages=self.chat_history
                     )
                     final_msg = final_response.get('message', {})
-                    final_dict = dict(final_msg) if isinstance(final_msg, dict) else (getattr(final_msg, 'model_dump', lambda: dict(final_msg))())
+                    final_dict = dict(final_msg) if isinstance(final_msg, dict) else (
+                        getattr(final_msg, 'model_dump', lambda: dict(final_msg))())
                     self.chat_history.append(final_dict)
-                    self.append_to_chat("Agent", final_dict.get('content', ''), "#A2CB8B")
+                    self.append_to_chat(
+                        "Agent", final_dict.get('content', ''), "#A2CB8B")
                 else:
                     self.chat_history.append(message_dict)
-                    self.append_to_chat("Agent", message_dict.get('content', ''), "#A2CB8B")
+                    self.append_to_chat(
+                        "Agent", message_dict.get('content', ''), "#A2CB8B")
 
 
 async def main():

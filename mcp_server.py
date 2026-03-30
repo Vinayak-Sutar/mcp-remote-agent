@@ -8,8 +8,8 @@ mcp = FastMCP("UbuntuRemoteTools")
 
 
 @mcp.tool()
-def search_youtube(query: str) -> str:
-    """Opens browser to YouTube search results. Use this when the user asks to search for a topic or video but DOES NOT explicitly restrict it to playing a song outright."""
+def browser_youtube_search(query: str) -> str:
+    """CRITICAL: ONLY use this tool if the user explicitly says 'SEARCH for'. DO NOT use this tool if the user says 'play'. Opens browser to YouTube search results."""
     try:
         encoded_query = urllib.parse.quote(query)
         url = f"https://www.youtube.com/results?search_query={encoded_query}"
@@ -22,7 +22,7 @@ def search_youtube(query: str) -> str:
 
 @mcp.tool()
 def play_youtube_video(query: str) -> str:
-    """Finds the first video matching the query and auto-plays it in the browser. Use this when the user specifically asks to 'play [song name]' or 'play [video]'."""
+    """CRITICAL: ONLY use this tool if the user explicitly says 'PLAY' a song or video. Do NOT use browser_youtube_search in combination with this. Finds the first video matching the query and auto-plays it."""
     try:
         encoded_query = urllib.parse.quote(query)
         search_url = f"https://www.youtube.com/results?search_query={encoded_query}"

@@ -4,18 +4,25 @@ A powerful local AI agent built using the **Model Context Protocol (MCP)** and l
 
 *Note: This agent is currently optimized for **Ubuntu Linux**. Windows support is planned for future updates.*
 
-This project bridges the gap between conversational AI, manual remote control interfaces, and functional OS execution. Instead of just answering questions, the agent dynamically parses natural language (both text and voice dictation), decides which system-level tool is needed, and invokes it seamlessly using an MCP Server-Client architecture. It also provides a traditional trackpad-style manual remote interface.
+This project bridges the gap between conversational AI, manual remote control interfaces, and functional OS execution. Instead of just answering questions, the agent dynamically parses natural language (both text and voice dictation), decides which system-level tool is needed, and invokes it seamlessly using an MCP Server-Client architecture.
 
 ## 🚀 Key Features
 
-* **Real System Manipulation**: Adjust system settings like master volume dynamically using ALSA/PulseAudio interfaces without opening system menus.
+### 🤖 Automation & Autonomous Tools
+* **AI Tool Orchestration**: Uses local Mistral models via Ollama to map conversational intents to direct python functions.
 * **Automated Media Playback**: Don't just search for songs; the agent utilizes headless HTML scraping to fetch YouTube IDs and auto-plays media instantly.
-* **Remote Trackpad & Mouse Control**: Includes a built-in virtual trackpad interface, allowing you to manually move the mouse, click, and interact with the desktop from your mobile device.
-* **Local, Private, \& Free**: Powered entirely by `Ollama` and `Mistral:latest`. No API limits, no subscription fees, and no data leaving your local machine.
-* **Dual Interface Architecture**: 
-  * **Desktop GUI App**: A beautiful, native PyQt6 interface for direct desktop interactions.
-  * **PWA Voice Server**: A Flask-based backend allowing mobile devices on the same LAN to dictate commands using browser WebRTC microphones, alongside manual mouse tracking.
-* **Regex Fallback Layer**: Implements a robust extraction system that captures tool-call JSON arrays even when the LLM hallucinates raw text, ensuring deterministic execution reliability.
+* **Robust JSON Extraction**: Implements a robust regex logic fallback system that forcibly captures tool-call arrays even when the LLM hallucinates conversational plain text.
+
+### 📱 Full Remote PC Control (Web App)
+Alongside the AI agent, the local network server provides a comprehensive remote control suite directly on your phone:
+* **Digital Trackpad**: Allows you to manually move the mouse, scroll, and click.
+* **Sound Controls**: Dedicated UI buttons for direct PulseAudio/ALSA master volume adjustment.
+* **Touch Keyboard Integration**: Full text typing from your mobile device directly to your desktop.
+* **Voice Typing**: Utilize mobile WebRTC dictation to write text across the LAN directly into your active PC window.
+* **Universal Shortcuts**: One-tap buttons for essential OS commands (Copy/Paste, Tab Switching (Alt+Tab), Forward/Backwards, closing windows via Alt+F4, etc.).
+
+### 🔒 Local, Private, & Free
+Powered entirely by local processes. No API limits, no subscription fees, and no audio or chat data leaving your local machine.
 
 ---
 
@@ -68,13 +75,13 @@ Launch the standalone chat UI to test operations directly on your PC.
 ./start_chat_interface.sh
 ```
 
-**Try typing commands like:**
+**Try typing AI commands like:**
 * *"Can you set my volume to 80 percent?"*
 * *"Play Numb by Linkin Park on YouTube."*
 * *"Search for Python tutorials on YouTube."*
 
-### Method B: The Local Voice & Mouse Server (Web App)
-Allows you to control your PC by speaking or using the digital trackpad on your mobile phone while on the same Wi-Fi network.
+### Method B: The Local Voice & Remote Server (Web App)
+Allows you to control your PC by speaking or using the digital trackpad/keyboard on your mobile phone while on the same Wi-Fi network.
 
 **1. Generate Self-Signed Certificates** (Required for browser mic access)
 ```bash
@@ -87,15 +94,17 @@ openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 36
 ./run_web_server.sh
 ```
 **3. Access from Phone**
-Navigate to `https://<YOUR_LOCAL_PC_IP>:5000` on your mobile browser, accept the security warning, and you can now:
-* Press the microphone button to speak AI commands.
-* Swipe on the empty screen area to use it as a remote mouse trackpad!
+Navigate to `https://<YOUR_LOCAL_PC_IP>:5000` on your mobile browser, accept the local security warning, and you can now:
+* Press the **microphone** button to speak AI commands.
+* Swipe the **virtual trackpad** for mouse operations.
+* Utilize the **Shortcut Menu** for UI actions like Tab-Switching, Copy/Paste, Media playback, or closing applications.
+* Use **Voice Typing** to rapidly dictate long paragraphs directly to your PC text fields.
 
 ---
 
 ## 🏗️ Extending the Agent
 
-Because this project utilizes the **Model Context Protocol**, adding new capabilities is incredibly easy.
+Because this project utilizes the **Model Context Protocol**, adding new AI capabilities is incredibly easy.
 
 1. Open `mcp_server.py`.
 2. Write a standard python function using the `@mcp.tool()` decorator.

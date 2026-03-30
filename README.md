@@ -4,16 +4,17 @@ A powerful local AI agent built using the **Model Context Protocol (MCP)** and l
 
 *Note: This agent is currently optimized for **Ubuntu Linux**. Windows support is planned for future updates.*
 
-This project bridges the gap between conversational AI and functional OS execution. Instead of just answering questions, the agent dynamically parses natural language (both text and voice dictation), decides which system-level tool is needed, and invokes it seamlessly using an MCP Server-Client architecture.
+This project bridges the gap between conversational AI, manual remote control interfaces, and functional OS execution. Instead of just answering questions, the agent dynamically parses natural language (both text and voice dictation), decides which system-level tool is needed, and invokes it seamlessly using an MCP Server-Client architecture. It also provides a traditional trackpad-style manual remote interface.
 
 ## 🚀 Key Features
 
 * **Real System Manipulation**: Adjust system settings like master volume dynamically using ALSA/PulseAudio interfaces without opening system menus.
 * **Automated Media Playback**: Don't just search for songs; the agent utilizes headless HTML scraping to fetch YouTube IDs and auto-plays media instantly.
+* **Remote Trackpad & Mouse Control**: Includes a built-in virtual trackpad interface, allowing you to manually move the mouse, click, and interact with the desktop from your mobile device.
 * **Local, Private, \& Free**: Powered entirely by `Ollama` and `Mistral:latest`. No API limits, no subscription fees, and no data leaving your local machine.
 * **Dual Interface Architecture**: 
   * **Desktop GUI App**: A beautiful, native PyQt6 interface for direct desktop interactions.
-  * **PWA Voice Server**: A Flask-based backend allowing mobile devices on the same LAN to dictate commands using browser WebRTC microphones.
+  * **PWA Voice Server**: A Flask-based backend allowing mobile devices on the same LAN to dictate commands using browser WebRTC microphones, alongside manual mouse tracking.
 * **Regex Fallback Layer**: Implements a robust extraction system that captures tool-call JSON arrays even when the LLM hallucinates raw text, ensuring deterministic execution reliability.
 
 ---
@@ -23,7 +24,7 @@ This project bridges the gap between conversational AI and functional OS executi
 This project is divided into three core architectural layers:
 1. **The Server (`mcp_server.py`)**: A `FastMCP` initialized daemon that holds the actual python OS tools (the "Hands").
 2. **The Client/Agent (`agent.py`)**: Acts as the LLM orchestrator. It fetches the available tool schemas dynamically from the server, passes them to Mistral via Ollama, and analyzes intent (the "Brain").
-3. **The Interfaces (`desktop_app.py` & `server.py`)**: The frontend wrappers that handle user input (text or speech-to-text) and display agent outputs. 
+3. **The Interfaces (`desktop_app.py` & `server.py`)**: The frontend wrappers that handle user input (text, speech-to-text, and mouse coordinates) and display agent outputs. 
 
 ---
 
@@ -34,6 +35,7 @@ This project is divided into three core architectural layers:
 * Python 3.10+
 * Local installation of [Ollama](https://ollama.com/) 
 * Pulseaudio / ALSA mappings (For Linux volume control)
+* `pynput` / `evdev` system dependencies (For mouse control plotting)
 
 ### 1. Clone & Environment
 ```bash
@@ -71,8 +73,8 @@ Launch the standalone chat UI to test operations directly on your PC.
 * *"Play Numb by Linkin Park on YouTube."*
 * *"Search for Python tutorials on YouTube."*
 
-### Method B: The Local Voice Server (Web App)
-Allows you to control your PC by speaking into your mobile phone while on the same Wi-Fi network.
+### Method B: The Local Voice & Mouse Server (Web App)
+Allows you to control your PC by speaking or using the digital trackpad on your mobile phone while on the same Wi-Fi network.
 
 **1. Generate Self-Signed Certificates** (Required for browser mic access)
 ```bash
@@ -85,7 +87,9 @@ openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 36
 ./run_web_server.sh
 ```
 **3. Access from Phone**
-Navigate to `https://<YOUR_LOCAL_PC_IP>:5000` on your mobile browser, accept the security warning, press the microphone button, and start talking!
+Navigate to `https://<YOUR_LOCAL_PC_IP>:5000` on your mobile browser, accept the security warning, and you can now:
+* Press the microphone button to speak AI commands.
+* Swipe on the empty screen area to use it as a remote mouse trackpad!
 
 ---
 

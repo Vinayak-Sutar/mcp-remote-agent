@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>PC Remote Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.js"></script>
+    <style>
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            background-color: #121212; color: #ffffff;
+            font-family: sans-serif; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .toolbar {
+            display: flex; justify-content: space-between;
+            padding: 10px 20px; align-items: center;
+        }
+        button {
+            background-color: #333; color: white; border: none;
+            padding: 8px 12px; border-radius: 8px; font-size: 14px;
+        }
+        button:active { background-color: #555; }
+        #trackpad {
+            flex: 1; background-color: #1e1e1e; border-radius: 20px;
+            margin: 10px 20px 20px 20px; position: relative; touch-action: none;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .trackpad-label { color: #666; pointer-events: none; user-select: none; }
+        .buttons { display: flex; gap: 20px; margin: 0 20px 20px 20px; height: 80px; }
+        .btn {
+            flex: 1; background-color: #333; border-radius: 15px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; font-weight: bold; user-select: none; touch-action: none;
+        }
+        .btn:active { background-color: #555; }
+        #keyboard-input { position: absolute; top: -1000px; opacity: 0; }
+        
+        /* Modal Styles */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(18, 18, 18, 0.95); z-index: 100;
+            display: flex; flex-direction: column; padding: 30px;
+            transform: translateY(100%); transition: transform 0.3s ease;
+            box-sizing: border-box;
+        }
+        .modal.active { transform: translateY(0); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .close-btn { font-size: 24px; color: #ff5555; cursor: pointer; padding: 10px; }
+        .setting-group { margin-bottom: 25px; }
+        .setting-group label { display: block; margin-bottom: 15px; font-size: 1.1rem; color: #58a6ff; }
+        input[type=range] { width: 100%; }
+        .toggle-container { display: flex; justify-content: space-between; align-items: center; }
+        
+        /* Switch */
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #555; transition: .4s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px;
+            background-color: white; transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #58a6ff; }
+        input:checked + .slider:before { transform: translateX(22px); }
+    
+        .controls-wrapper {
+            background-color: #2a2a2a;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .controls-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .icon-btn {
+            flex: 1;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: #e0e0e0;
+            font-size: 1.5rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.1s ease;
+            user-select: none;
+        }
+        .icon-btn:active {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.95);
+        }
+        #close-app-btn {
+            background: rgba(255, 85, 85, 0.1); 
+            border: 1px solid rgba(255, 85, 85, 0.3);
+            color: #ff5555;
+            padding: 5px 15px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+    
+        /* Added rules to prevent apps list from blocking mouse buttons when not active */
+        #apps-modal {
+            z-index: 1000;
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            max-height: 80vh;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            bottom: 0;
+            top: auto;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+            box-sizing: border-box;
+            box-shadow: 0 -5px 25px rgba(0,0,0,0.5);
+        }
+
+        #apps-modal.active {
+            display: flex;
+            transform: translateY(0);
+        }
+
+        /* Adjust the touch area of the mouse buttons to not be blocked */
+        .mouse-buttons {
+            z-index: 10; 
+        }
+</style>
+</head>
+<body>
+    <div class="toolbar">
+        <div>Status: <span id="status" style="color: red;">Disconnected</span></div>
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <button id="apps-btn" style="height: fit-content; background: rgba(88, 166, 255, 0.2); border-color: rgba(88, 166, 255, 0.4); color: #58a6ff;">📱</button>           
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="settings-btn">⚙️</button>
+                <button id="close-app-btn">✕</button>
+            </div>
+        </div>
+    </div>
+    
+    <input type="text" id="keyboard-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+
+    <!-- Shortcuts Toggle -->
+    <div style="margin: 5px 20px;">
+                <div style="display: flex; gap: 15px;">
+            <button id="shortcuts-toggle-btn" style="background: rgba(255, 215, 0, 0.15); border: 1px solid rgba(255, 215, 0, 0.4); border-radius: 50%; width: 40px; height: 40px; font-size: 20px; display: flex; align-items: center; justify-content: center; padding: 0;">✨</button>
+            <button id="mic-btn" style="background: rgba(255, 50, 50, 0.15); border: 1px solid rgba(255, 50, 50, 0.4); border-radius: 50%; width: 40px; height: 40px; font-size: 20px; display: flex; align-items: center; justify-content: center; padding: 0; transition: background 0.3s;">🎙️</button>
+        </div>
+        
+        <!-- Shortcuts Panel -->
+        <div id="shortcuts-panel" style="display: none; flex-wrap: wrap; gap: 10px; margin-top: 10px; background: #222; padding: 15px; border-radius: 12px;">
+            <button class="shortcut-cmd-btn" data-action="copy" style="background: #333; flex: 1; padding: 12px; border: 1px solid #444; border-radius: 8px;">Copy</button>
+            <button class="shortcut-cmd-btn" data-action="paste" style="background: #333; flex: 1; padding: 12px; border: 1px solid #444; border-radius: 8px;">Paste</button>
+            <button class="shortcut-cmd-btn" data-action="super" style="background: #333; flex: 1; padding: 12px; border: 1px solid #444; border-radius: 8px;">Windows</button>
+        </div>
+    </div>
+
+    <div id="trackpad">
+        <div class="trackpad-label">TRACKPAD</div>
+    </div>
+
+    
+    <div class="controls-wrapper">
+        <div class="controls-top">
+            <div class="icon-btn" id="vol-down-btn">🔉</div>
+            <div class="icon-btn" id="back-btn">◀</div>
+            <div class="icon-btn" id="kb-toggle-btn">⌨️</div>
+            <div class="icon-btn" id="forward-btn">▶</div>
+            <div class="icon-btn" id="vol-up-btn">🔊</div>
+        </div>
+        
+        <div class="controls-top">
+            <div class="icon-btn" id="arrow-left-btn">⬅️</div>
+            <div class="icon-btn" id="arrow-down-btn">⬇️</div>
+            <div class="icon-btn" id="arrow-up-btn">⬆️</div>
+            <div class="icon-btn" id="arrow-right-btn">➡️</div>
+        </div>
+    </div>
+
+    <div class="buttons">
+        <div class="btn" id="btn-left">LEFT</div>
+        <div class="btn" id="btn-middle">MID</div>
+        <div class="btn" id="btn-right">RIGHT</div>
+    </div>
+
+
+    <!-- Apps Modal -->
+    <div id="apps-modal" class="modal">
+        <div class="modal-header">
+            <h2 style="margin:0;">Installed Apps</h2>
+            <div class="close-btn" id="close-apps">✕</div>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <button id="refresh-apps-btn" style="width:100%; padding: 10px; background: #333; color: white; border: 1px solid #555; border-radius: 8px;">Refresh Apps List</button>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <input type="text" id="pc-apps-search" placeholder="Search apps..." style="width: 100%; padding: 10px; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 8px;">
+        </div>
+        <div id="pc-apps-loading" style="text-align: center; color: #58a6ff; padding: 20px; display: none;">Scanning PC for installed apps...</div>
+        <div class="apps-list" id="pc-apps-list" style="flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+            <!-- Populated from server -->
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-header">
+            <h2 style="margin:0;">Settings</h2>
+            <div class="close-btn" id="close-settings">✕</div>
+        </div>
+
+        <div class="setting-group">
+            <label for="sensitivity">Mouse Speed: <span id="sens-val">1.5</span>x</label>
+            <input type="range" id="sensitivity" min="0.1" max="5.0" step="0.1" value="1.5">
+        </div>
+
+        <div class="setting-group">
+            <label for="scroll-sensitivity">Scroll Speed: <span id="scroll-sens-val">1.0</span>x</label>
+            <input type="range" id="scroll-sensitivity" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+
+        <div class="setting-group toggle-container">
+            <label for="invert-scroll" style="margin:0;">Invert Scrolling</label>
+            <label class="switch">
+                <input type="checkbox" id="invert-scroll" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const statusEl = document.getElementById('status');
+        
+        socket.on('connect', () => {
+            statusEl.innerText = 'Connected';
+            statusEl.style.color = '#00ff00';
+        });
+        
+        socket.on('disconnect', () => {
+            statusEl.innerText = 'Disconnected';
+            statusEl.style.color = 'red';
+        });
+
+        // Settings State
+        let sensitivity = parseFloat(localStorage.getItem('pc_remote_sens')) || 1.5;
+        let scrollSensitivity = parseFloat(localStorage.getItem('pc_remote_scroll_sens')) || 1.0;
+        let invertScroll = localStorage.getItem('pc_remote_invert');
+        invertScroll = invertScroll === null ? true : (invertScroll === 'true');
+
+        // Settings UI Elements
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsBtn = document.getElementById('settings-btn');
+        const closeSettings = document.getElementById('close-settings');
+        
+        const sensSlider = document.getElementById('sensitivity');
+        const sensVal = document.getElementById('sens-val');
+        const scrollSensSlider = document.getElementById('scroll-sensitivity');
+        const scrollSensVal = document.getElementById('scroll-sens-val');
+        const invertScrollToggle = document.getElementById('invert-scroll');
+
+        // Initialize UI with saved values
+        sensSlider.value = sensitivity;
+        sensVal.innerText = sensitivity.toFixed(1);
+        scrollSensSlider.value = scrollSensitivity;
+        scrollSensVal.innerText = scrollSensitivity.toFixed(1);
+        invertScrollToggle.checked = invertScroll;
+
+        // Settings Listeners
+        settingsBtn.addEventListener('click', () => settingsModal.classList.add('active'));
+        closeSettings.addEventListener('click', () => settingsModal.classList.remove('active'));
+
+        sensSlider.addEventListener('input', (e) => {
+            sensitivity = parseFloat(e.target.value);
+            sensVal.innerText = sensitivity.toFixed(1);
+            localStorage.setItem('pc_remote_sens', sensitivity);
+        });
+
+        scrollSensSlider.addEventListener('input', (e) => {
+            scrollSensitivity = parseFloat(e.target.value);
+            scrollSensVal.innerText = scrollSensitivity.toFixed(1);
+            localStorage.setItem('pc_remote_scroll_sens', scrollSensitivity);
+        });
+
+        invertScrollToggle.addEventListener('change', (e) => {
+            invertScroll = e.target.checked;
+            localStorage.setItem('pc_remote_invert', invertScroll);
+        });
+
+        // Trackpad Logic with Individual Finger Tracking
+        
+        const trackpad = document.getElementById('trackpad');
+        let lastTouches = {};
+
+        // States
+        let threeFingerGestureStarted = false;
+        let threeFingerActionFired = false;
+        let altTabActive = false;
+        let threeFingerStartX = 0;
+        let threeFingerStartY = 0;
+        
+        let touchStartTime = 0;
+        let touchStartPos = { x: 0, y: 0 };
+        let dragActive = false;
+        let lastTapTime = 0;
+        let isSecondTapDown = false;
+
+        trackpad.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+
+            // 3-Finger Start Tracking
+            if (e.targetTouches.length === 3) {
+                threeFingerGestureStarted = true;
+                threeFingerActionFired = false;
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < 3; i++) {
+                    sumX += e.targetTouches[i].clientX;
+                    sumY += e.targetTouches[i].clientY;
+                }
+                threeFingerStartX = sumX / 3;
+                threeFingerStartY = sumY / 3;
+            }
+
+            // 1-Finger Tap Tracking (for Double-Tap Drag & Click)
+            if (e.targetTouches.length === 1 && !threeFingerGestureStarted) {
+                const now = Date.now();
+                if (now - lastTapTime < 300) {
+                    isSecondTapDown = true;
+                    touchStartPos = { x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY };
+                } else {
+                    touchStartTime = now;
+                    touchStartPos = { x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY };
+                    isSecondTapDown = false;
+                }
+            }
+
+            // Cache standard Touches
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                lastTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
+            }
+        }, { passive: false });
+
+        trackpad.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+
+            // 1 Finger Moves
+            if (e.targetTouches.length === 1 && !threeFingerGestureStarted) {
+                const touch = e.targetTouches[0];
+                
+                // Trigger Drag?
+                if (isSecondTapDown && !dragActive) {
+                    const dist = Math.hypot(touch.clientX - touchStartPos.x, touch.clientY - touchStartPos.y);
+                    if (dist > 5) {
+                        isSecondTapDown = false;
+                        dragActive = true;
+                        socket.emit('drag', { action: 'start' });
+                        if (navigator.vibrate) navigator.vibrate(30);
+                    }
+                    if (!dragActive) return; // Prevent jitter before DRAG lock
+                }
+
+                const last = lastTouches[touch.identifier];
+                if (last) {
+                    const dx = touch.clientX - last.x;
+                    const dy = touch.clientY - last.y;
+                    socket.emit('move', { dx: Math.round(dx * sensitivity), dy: Math.round(dy * sensitivity) });
+                    lastTouches[touch.identifier] = { x: touch.clientX, y: touch.clientY };
+                }
+            }
+            // 2 Fingers Moves (Scroll)
+            else if (e.targetTouches.length === 2 && !threeFingerGestureStarted) {
+                const t1 = e.targetTouches[0];
+                const l1 = lastTouches[t1.identifier];
+                if (l1) {
+                    const dy = t1.clientY - l1.y;
+                    if (Math.abs(dy) > 2) {
+                        const scrollDirection = invertScroll ? -1 : 1;
+                        const scrollVal = Math.round((dy / Math.abs(dy)) * scrollSensitivity * scrollDirection);
+                        socket.emit('scroll', { dy: scrollVal, dx: 0 });
+                        
+                        // update trackers so no jumps
+                        for(let i=0; i<2; i++){
+                            lastTouches[e.targetTouches[i].identifier] = { x: e.targetTouches[i].clientX, y: e.targetTouches[i].clientY };
+                        }
+                    }
+                }
+            }
+            // 3 Fingers Moves (Alt-Tab / Swipe)
+            else if (e.targetTouches.length === 3 && threeFingerGestureStarted) {
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < 3; i++) {
+                    sumX += e.targetTouches[i].clientX;
+                    sumY += e.targetTouches[i].clientY;
+                }
+                const cX = sumX / 3;
+                const cY = sumY / 3;
+                const dx = cX - threeFingerStartX;
+                const dy = cY - threeFingerStartY;
+
+                if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        // Horizontal Swipe: ALT-TAB
+                        if (!altTabActive) {
+                            altTabActive = true;
+                            socket.emit('alt_tab', { action: 'start' });
+                        }
+                        if (dx > 0) socket.emit('alt_tab', { action: 'step', direction: 'right' });
+                        else socket.emit('alt_tab', { action: 'step', direction: 'left' });
+                        
+                        threeFingerStartX = cX; // reset X to require another 30px swipe for next tab
+                        if (navigator.vibrate) navigator.vibrate(30);
+
+                    } else if (!threeFingerActionFired) {
+                        // Vertical Swipe (Super+D to Show Desktop)
+                        threeFingerActionFired = true;
+                        socket.emit('swipe', { direction: dy > 0 ? 'down' : 'up', fingers: 3 });
+                        if (navigator.vibrate) navigator.vibrate(30);
+                    }
+                }
+            }
+        }, { passive: false });
+
+        const handleTouchEnd = (e) => {
+            e.preventDefault();
+
+            // 3-Finger Release (Triggering ALT-TAB stop)
+            if (e.targetTouches.length < 3) {
+                if (altTabActive) {
+                    socket.emit('alt_tab', { action: 'stop' });
+                    altTabActive = false;
+                }
+                threeFingerGestureStarted = false;
+                threeFingerActionFired = false;
+            }
+
+            // Cleanup trackers
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                delete lastTouches[e.changedTouches[i].identifier];
+            }
+
+            // Let's resolve the tap-to-click and drag-to-drop
+            if (e.changedTouches.length === 1) {
+                const touchTime = Date.now() - touchStartTime;
+                const t0 = e.changedTouches[0];
+                const distX = t0.clientX - touchStartPos.x;
+                const distY = t0.clientY - touchStartPos.y;
+                const dist = Math.hypot(distX, distY);
+
+                if (dragActive) {
+                    // Finger lifted after dragging -> DROP
+                    dragActive = false;
+                    socket.emit('drag', { action: 'stop' });
+                } else if (isSecondTapDown) {
+                    // Finger lifted without dragging -> Double Tap
+                    isSecondTapDown = false;
+                    socket.emit('click', { button: 'left', double: true });
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    lastTapTime = 0;
+                } else if (!threeFingerGestureStarted) {
+                    // Finger lifted -> Was it a fast single Tap?
+                    if (touchTime < 300 && dist < 10) {
+                        socket.emit('click', { button: 'left' });
+                        if (navigator.vibrate) navigator.vibrate(20);
+                        lastTapTime = Date.now();
+                        
+                        // Hide keyboard strictly on a physical intended Tap!
+                        const kbd = document.getElementById('keyboard-input');
+                        if (document.activeElement === kbd) {
+                            kbd.blur();
+                        }
+                    }
+                }
+            }
+        };
+
+        trackpad.addEventListener('touchend', handleTouchEnd, { passive: false });
+        trackpad.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+        
+        /* -------------------------- END TRACKPAD LOGIC -------------------------- */
+
+
+        // Mouse Buttons Logic
+        function bindButton(elId, buttonName) {
+            const el = document.getElementById(elId);
+            el.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                el.style.backgroundColor = '#555';
+                socket.emit('click', { button: buttonName, state: 'down' });
+                if (navigator.vibrate) navigator.vibrate(30);
+            });
+            el.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                el.style.backgroundColor = '#333';
+                socket.emit('click', { button: buttonName, state: 'up' });
+            });
+            el.addEventListener('touchcancel', (e) => {
+                el.style.backgroundColor = '#333';
+                socket.emit('click', { button: buttonName, state: 'up' });
+            });
+        }
+
+        bindButton('btn-left', 'left');
+        bindButton('btn-middle', 'middle');
+        bindButton('btn-right', 'right');
+
+        
+        // Close App (Alt+F4)
+        const closeAppBtn = document.getElementById('close-app-btn');
+        if(closeAppBtn) {
+            closeAppBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('alt_f4');
+                if (navigator.vibrate) navigator.vibrate(50);
+            });
+        }
+
+        // Arrow Buttons
+        const arrowLeftBtn = document.getElementById('arrow-left-btn');
+        const arrowUpBtn = document.getElementById('arrow-up-btn');
+        const arrowDownBtn = document.getElementById('arrow-down-btn');
+        const arrowRightBtn = document.getElementById('arrow-right-btn');
+
+        const setupArrowBtn = (btn, dir) => {
+            if(!btn) return;
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('arrow', { direction: dir });
+                if (navigator.vibrate) navigator.vibrate(30);
+            });
+        };
+        setupArrowBtn(arrowUpBtn, 'up');
+        setupArrowBtn(arrowDownBtn, 'down');
+        setupArrowBtn(arrowLeftBtn, 'left');
+        setupArrowBtn(arrowRightBtn, 'right');
+
+        // Navigation Buttons
+        const backBtn = document.getElementById('back-btn');
+        const forwardBtn = document.getElementById('forward-btn');
+
+        if(backBtn) {
+            backBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('nav', { direction: 'back' });
+                if (navigator.vibrate) navigator.vibrate(50);
+            });
+        }
+
+        if(forwardBtn) {
+            forwardBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('nav', { direction: 'forward' });
+                if (navigator.vibrate) navigator.vibrate(50);
+            });
+        }
+
+        // Volume Buttons
+        const volDownBtn = document.getElementById('vol-down-btn');
+        const volUpBtn = document.getElementById('vol-up-btn');
+
+        if(volDownBtn) {
+            volDownBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('volume', { action: 'down' });
+                if (navigator.vibrate) navigator.vibrate(30);
+            });
+        }
+
+        if(volUpBtn) {
+            volUpBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('volume', { action: 'up' });
+                if (navigator.vibrate) navigator.vibrate(30);
+            });
+        }
+
+        
+        // Swap gear and close-btn logic (already mapped, but let's add Apps logic)
+        const appsModal = document.getElementById('apps-modal');
+        const appsBtn = document.getElementById('apps-btn');
+        const closeApps = document.getElementById('close-apps');
+        const pcAppsList = document.getElementById('pc-apps-list');
+        const pcAppsSearch = document.getElementById('pc-apps-search');
+        const pcAppsLoading = document.getElementById('pc-apps-loading');
+        const refreshAppsBtn = document.getElementById('refresh-apps-btn');
+
+        let allApps = [];
+
+        appsBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            appsModal.classList.add('active');
+            if(allApps.length === 0) { // lazy load
+                pcAppsLoading.style.display = 'block';
+                socket.emit('get_pc_apps');
+            }
+        });
+
+        refreshAppsBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            pcAppsList.innerHTML = '';
+            pcAppsLoading.style.display = 'block';
+            socket.emit('get_pc_apps');
+        });
+
+        closeApps.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            appsModal.classList.remove('active');
+        });
+
+        // Backend response
+        socket.on('pc_apps_list', (apps) => {
+            allApps = apps;
+            pcAppsLoading.style.display = 'none';
+            renderApps(allApps);
+        });
+
+        function renderApps(apps) {
+            pcAppsList.innerHTML = '';
+            apps.forEach(app => {
+                const div = document.createElement('div');
+                div.style.padding = '15px';
+                div.style.background = 'rgba(255,255,255,0.05)';
+                div.style.borderRadius = '8px';
+                div.style.display = 'flex';
+                div.style.alignItems = 'center';
+                div.style.gap = '15px';
+                div.style.cursor = 'pointer';
+                div.innerHTML = `
+                    <div style="font-size: 1.2rem; flex-grow: 1;">${app.name}</div>
+                    <div style="color: #58a6ff;">🚀</div>
+                `;
+                div.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    div.style.background = 'rgba(255,255,255,0.15)';
+                    socket.emit('open_app', { app: app.cmd });
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    appsModal.classList.remove('active'); // auto-close after launch
+                    
+                    // reset visual state quickly
+                    setTimeout(() => { div.style.background = 'rgba(255,255,255,0.05)'; }, 200);
+                });
+                
+                // For visual touch feedback without blocking scroll
+                div.addEventListener('touchstart', (e) => {
+                    div.style.background = 'rgba(255,255,255,0.1)';
+                }, { passive: true });
+                div.addEventListener('touchend', (e) => {
+                    div.style.background = 'rgba(255,255,255,0.05)';
+                }, { passive: true });
+                div.addEventListener('touchcancel', (e) => {
+                    div.style.background = 'rgba(255,255,255,0.05)';
+                }, { passive: true });
+                pcAppsList.appendChild(div);
+            });
+        }
+
+        pcAppsSearch.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = allApps.filter(app => app.name.toLowerCase().includes(query));
+            renderApps(filtered);
+        });
+
+        // Keyboard Logic
+        const kbd = document.getElementById('keyboard-input');
+        const kbToggleBtn = document.getElementById('kb-toggle-btn');
+        
+        kbToggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (document.activeElement === kbd) {
+                kbd.blur();
+            } else {
+                kbd.focus();
+                if (navigator.vibrate) navigator.vibrate(50);
+            }
+        });
+
+        kbd.addEventListener('input', (e) => {
+            const val = kbd.value;
+            if (e.inputType === 'insertText' || e.inputType === 'insertCompositionText') {
+                if (e.data) {
+                    // Send the new character(s)
+                    socket.emit('key', { key: e.data, state: 'press' });
+                }
+            } else if (val.length > 0) {
+                // Fallback for older browsers or full word auto-complete insertions!
+                if (e.data) {
+                    socket.emit('key', { key: e.data, state: 'press' });
+                } else {
+                    socket.emit('key', { key: val[val.length - 1], state: 'press' });
+                }
+            }
+            kbd.value = ''; // clear input immediately to prevent buildup sync issues
+        });
+        
+        kbd.addEventListener('keydown', (e) => {
+            // Handle special keys
+            if (e.key === 'Backspace' || e.key === 'Enter') {
+                socket.emit('key', { key: e.key.toUpperCase(), state: 'press' });
+                kbd.value = '';
+            }
+        });
+            // Shortcuts
+        const shortcutsToggleBtn = document.getElementById('shortcuts-toggle-btn');
+        const shortcutsPanel = document.getElementById('shortcuts-panel');
+        
+        shortcutsToggleBtn.addEventListener('click', () => {
+            shortcutsPanel.style.display = shortcutsPanel.style.display === 'flex' ? 'none' : 'flex';
+            if(navigator.vibrate) navigator.vibrate(10);
+        });
+
+        document.querySelectorAll('.shortcut-cmd-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const action = e.target.getAttribute('data-action');
+                socket.emit('shortcut', { action: action });
+                
+                // Visual feedback
+                const origBg = e.target.style.background;
+                e.target.style.background = '#555';
+                setTimeout(() => e.target.style.background = origBg, 150);
+                
+                if(navigator.vibrate) navigator.vibrate(20);
+            });
+        });
+
+        
+        socket.on('transcription_result', (data) => {
+            if (data.text) {
+                // If keyboard input already has text, append with a space. Otherwise, just set it.
+                if (kbd.value.length > 0) {
+                    kbd.value += " " + data.text;
+                } else {
+                    kbd.value = data.text;
+                }
+                
+                // Show visual feedback that voice typing occurred
+                kbd.style.boxShadow = "0 0 10px rgba(0,255,0,0.5)";
+                setTimeout(() => kbd.style.boxShadow = "none", 500);
+            }
+        });
+
+        // --- Speech Audio Recording ---
+        const micBtn = document.getElementById('mic-btn');
+        let isRecordingProcessActive = false;
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioContext;
+        let analyser;
+        let micStream;
+        let monitorInterval;
+
+        // VAD Config
+        const SILENCE_LIMIT = 800; // ms of silence to cut chunk
+        let isCurrentlySpeaking = false;
+        let lastSpeakTime = Date.now();
+
+        // Set default mic color to red
+        micBtn.style.background = 'rgba(255, 0, 0, 0.6)';
+        micBtn.style.transition = 'all 0.2s';
+
+        micBtn.addEventListener('click', async () => {
+            if (!isRecordingProcessActive) {
+                // START 
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    isRecordingProcessActive = true;
+                    micBtn.style.background = 'rgba(0, 255, 0, 0.6)'; // Green when listening
+                    
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioContext.createMediaStreamSource(micStream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.minDecibels = -50; // Threshold for background noise
+                    source.connect(analyser);
+                    
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+
+                    const startNewRecorder = () => {
+                        if (!isRecordingProcessActive) return;
+                        try {
+                            mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm' });
+                        } catch (e) {
+                            // Fallback for older browsers
+                            mediaRecorder = new MediaRecorder(micStream);
+                        }
+                        audioChunks = [];
+                        
+                        mediaRecorder.ondataavailable = e => {
+                            if (e.data.size > 0) audioChunks.push(e.data);
+                        };
+                        
+                        mediaRecorder.onstop = () => {
+                            if (audioChunks.length > 0) {
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                                socket.emit('speech_audio', audioBlob);
+                            }
+                        };
+                        
+                        mediaRecorder.start();
+                    };
+
+                    startNewRecorder();
+                    lastSpeakTime = Date.now();
+                    isCurrentlySpeaking = false;
+
+                    let chunkStartTime = Date.now();
+                    
+                    // Monitor Volume loop for Voice Activity Detection
+                    monitorInterval = setInterval(() => {
+                        if (!isRecordingProcessActive) return;
+                        
+                        analyser.getByteFrequencyData(dataArray);
+                        let sum = 0;
+                        for (let i = 0; i < bufferLength; i++) {
+                            sum += dataArray[i];
+                        }
+                        let avg = sum / bufferLength;
+
+                        // Use a higher threshold so background AC/fans don't keep it open
+                        if (avg > 15) {
+                            if (!isCurrentlySpeaking) {
+                                isCurrentlySpeaking = true;
+                                micBtn.style.boxShadow = '0 0 20px 5px rgba(0, 255, 0, 0.8)';
+                            }
+                            lastSpeakTime = Date.now();
+                        } else {
+                            if (isCurrentlySpeaking) {
+                                micBtn.style.boxShadow = 'none';
+                                // Has it been silent for 500ms?
+                                if (Date.now() - lastSpeakTime > 500) {
+                                    isCurrentlySpeaking = false;
+                                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                                        mediaRecorder.stop();
+                                        startNewRecorder();
+                                        chunkStartTime = Date.now();
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Failsafe: If no pause happened but we've been recording for 3.5 seconds,
+                        // force a chunk so the user sees text immediately!
+                        if (Date.now() - chunkStartTime > 3500) {
+                            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                                mediaRecorder.stop();
+                                startNewRecorder();
+                                chunkStartTime = Date.now();
+                            }
+                        }
+                    }, 50);
+
+                    if (navigator.vibrate) navigator.vibrate(50);
+                } catch (err) {
+                    console.error("Mic error:", err);
+                }
+            } else {
+                // STOP
+                isRecordingProcessActive = false;
+                clearInterval(monitorInterval);
+                
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                }
+                if (micStream) {
+                    micStream.getTracks().forEach(t => t.stop());
+                }
+                if (audioContext) {
+                    audioContext.close();
+                }
+                
+                micBtn.style.background = 'rgba(255, 0, 0, 0.6)';
+                micBtn.style.boxShadow = 'none';
+                if (navigator.vibrate) navigator.vibrate(50);
+            }
+        });
+
+</script>
+</body>
+</html>

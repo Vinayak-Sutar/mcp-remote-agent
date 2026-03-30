@@ -1,0 +1,1 @@
+pkill -f "python server.py" ; source .venv/bin/activate && LD_LIBRARY_PATH="$PWD/.venv/lib/python3.12/site-packages/nvidia/cublas/lib:$PWD/.venv/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH" python server.py

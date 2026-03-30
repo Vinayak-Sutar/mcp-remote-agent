@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PC Remote</title>
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0d1117">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    
+    <!-- Socket.IO library --><script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --accent: #58a6ff;
+            --panel-bg: rgba(22, 27, 34, 0.8);
+            --text-color: #c9d1d9;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            /* Prevent text selection */
+            -webkit-user-select: none;
+            /* Safari */
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            /* Prevent scrolling the page on mobile */
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        #debug-indicator {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            color: var(--accent);
+            pointer-events: none;
+            z-index: 1000;
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            display: none;
+            /* Hidden by default, shown in JS */
+        }
+
+        /* Trackpad area */
+        #trackpad {
+            flex-grow: 1;
+            background: radial-gradient(circle at center, rgba(88, 166, 255, 0.05) 0%, transparent 70%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            touch-action: none;
+            /* Very important! Prevents browser specific touch actions like zooming or scrolling */
+        }
+
+        #trackpad::after {
+            content: "Trackpad Area";
+            color: rgba(201, 209, 217, 0.2);
+            font-size: 2rem;
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        /* Buttons container */
+        .controls-wrapper {
+            background-color: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        .controls-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        /* Top Icon Buttons */
+        .icon-btn {
+            flex: 1;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: var(--text-color);
+            font-size: 1.5rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.1s ease;
+        }
+
+        .icon-btn:active {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.95);
+        }
+
+        /* Collapsible Media Panel */
+        .media-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .media-panel-header {
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+            user-select: none;
+        }
+
+        .media-panel-header:active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .media-panel-content {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            padding: 0 10px 10px 10px;
+        }
+
+        .media-panel.expanded .media-panel-content {
+            display: flex;
+        }
+
+        .controls {
+            display: flex;
+            height: 80px;
+            gap: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: var(--text-color);
+            font-size: 1.2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.1s ease;
+        }
+
+        .btn:active {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.98);
+        }
+
+        /* Expandable Edit Controls */
+        #extra-controls {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        #extra-controls.active {
+            display: grid;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .edit-btn {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            border-radius: 12px;
+            height: 45px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1rem;
+            color: var(--accent);
+            transition: all 0.1s ease;
+        }
+
+        .edit-btn:active {
+            background: rgba(88, 166, 255, 0.25);
+            transform: scale(0.95);
+        }
+
+        .top-actions {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: flex-end;
+            z-index: 100;
+        }
+
+        .action-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        /* Modals */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(13, 17, 23, 0.95);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+        }
+
+        .modal.active {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+        }
+
+        .close-btn {
+            font-size: 2rem;
+            color: #ff5555;
+            cursor: pointer;
+        }
+
+        .apps-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .app-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 1.1rem;
+        }
+
+        .app-item:active {
+            background: rgba(88, 166, 255, 0.25);
+        }
+
+        .delete-app {
+            color: #ff5555;
+            font-size: 1.5rem;
+            padding: 0 10px;
+        }
+
+        .add-app-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 12px;
+        }
+
+        .add-app-form input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .add-app-btn {
+            background: var(--accent);
+            color: #0d1117;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .setting-group {
+            margin-bottom: 30px;
+        }
+
+        .setting-group label {
+            display: block;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            color: var(--accent);
+        }
+
+        /* Stylized slider */
+        input[type=range] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            margin-top: -10px;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+        }
+
+        /* Styled toggle switch */
+        .toggle-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        /* Connecting overlay */
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(13, 17, 23, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: var(--accent);
+            font-size: 1.5rem;
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Two finger scroll hint */
+        .hint {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 15px;
+        }
+
+        /* Hidden text input for keyboard trap */
+        #hidden-input {
+            position: absolute;
+            opacity: 0;
+            top: -1000px;
+            left: -1000px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <input type="text" id="hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+
+    <div id="overlay">Connecting...</div>
+
+    <div class="top-actions">
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <div class="action-btn" id="apps-btn">📱</div>
+            <div class="action-btn" id="settings-btn">⚙️</div>
+        </div>
+        <div class="action-btn" id="close-app-btn" style="color: #ff5555; background: rgba(255, 85, 85, 0.1); border: 1px solid rgba(255, 85, 85, 0.3);">✕</div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-header">
+            <h2>Settings</h2>
+            <div class="close-btn" id="close-settings">✕</div>
+        </div>
+
+        <div class="setting-group">
+            <label for="sensitivity">Mouse Sensitivity: <span id="sens-val">1.5</span>x</label>
+            <input type="range" id="sensitivity" min="0.1" max="5.0" step="0.1" value="1.5">
+        </div>
+
+        <div class="setting-group">
+            <label for="scroll-sensitivity">Scroll Sensitivity: <span id="scroll-sens-val">1.0</span>x</label>
+            <input type="range" id="scroll-sensitivity" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+
+        <div class="setting-group toggle-container">
+            <label for="invert-scroll" style="margin:0;">Invert Scrolling</label>
+            <label class="switch">
+                <input type="checkbox" id="invert-scroll" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Apps Modal -->
+    <div id="apps-modal" class="modal">
+        <div class="modal-header">
+            <h2>App Shortcuts</h2>
+            <div class="close-btn" id="close-apps">✕</div>
+        </div>
+
+        <div class="apps-list" id="apps-list">
+            <!-- Dynamic list of apps injected here by JS -->
+        </div>
+
+        <div class="add-app-form">
+            <h3 style="margin: 0 0 10px 0;">Add Shortcut</h3>
+            <button id="browse-apps-btn" style="background: rgba(88, 166, 255, 0.2); border: 1px solid rgba(88, 166, 255, 0.5); color: var(--accent); padding: 12px 10px; border-radius: 8px; cursor: pointer; font-size: 1.1rem; font-weight: bold; width: 100%;">🔍 Browse PC Apps</button>
+            <div style="text-align: center; margin: 10px 0; color: rgba(255,255,255,0.5);">— OR —</div>
+            <input type="text" id="new-app-name" placeholder="Name (e.g. Google)">
+            <input type="text" id="new-app-cmd" placeholder="URL / Command (e.g. https://google.com)">
+            <button class="add-app-btn" id="add-app-btn">Add Custom Shortcut</button>
+        </div>
+    </div>
+
+    <!-- PC Apps Selector Modal -->
+    <div id="pc-apps-modal" class="modal">
+        <div class="modal-header">
+            <h2>Select App</h2>
+            <div class="close-btn" id="close-pc-apps">✕</div>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <input type="text" id="pc-apps-search" placeholder="Search apps..." style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 8px;">
+        </div>
+        <div id="pc-apps-loading" style="text-align: center; color: var(--accent); padding: 20px;">Scanning PC for installed apps...</div>
+        <div class="apps-list" id="pc-apps-list">
+            <!-- Populated from server -->
+        </div>
+    </div>
+
+    <div id="debug-indicator">Points: 0</div>
+
+    <div id="trackpad">
+    </div>
+
+    <div class="controls-wrapper">
+        <div style="display: flex; align-items: stretch; gap: 10px; margin-bottom: 10px;">
+            <div class="icon-btn" id="more-actions-btn" style="height: auto; width: 50px; margin: 0; background: rgba(255,255,255,0.05);">✨</div>
+            <!-- Collapsible Media Panel -->
+            <div class="media-panel" id="media-panel" style="flex-grow: 1; margin: 0;">
+                <div class="media-panel-header" id="media-panel-header">
+                    🎬 Media Controls <span id="media-chevron" style="transition: transform 0.2s;">▼</span>
+                </div>
+                <div class="media-panel-content" id="media-panel-content">
+                    <div class="controls-top">
+                        <div class="icon-btn" id="media-prev-btn" style="flex: 1;">⏮</div>
+                        <div class="icon-btn" id="media-play-btn" style="flex: 1.5; font-size: 1.8rem;">⏯</div>
+                        <div class="icon-btn" id="media-next-btn" style="flex: 1;">⏭</div>
+                        <div class="icon-btn" id="media-mute-btn" style="flex: 1;">🔇</div>
+                    </div>
+                    <!-- Video Specific Shortcuts -->
+                    <div class="controls-top" style="gap: 5px;">
+                        <div class="btn" style="flex: 1; padding: 10px 5px; font-size: 0.9rem; justify-content: center;" id="vid-rewind-btn">⏪ 10s (J)</div>
+                        <div class="btn" style="flex: 1.5; padding: 10px 5px; font-size: 0.9rem; justify-content: center;" id="vid-fs-btn">🔲 Fullscreen</div>
+                        <div class="btn" style="flex: 1; padding: 10px 5px; font-size: 0.9rem; justify-content: center;" id="vid-forward-btn">⏩ 10s (L)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collapsible Edit Panel (Copy/Paste) -->
+        <div id="extra-controls">
+            <div class="edit-btn" id="copy-btn">📋 Copy</div>
+            <div class="edit-btn" id="paste-btn">📥 Paste</div>
+        </div>
+
+        <div class="controls-top">
+            <div class="icon-btn" id="vol-down-btn">🔉</div>
+            <div class="icon-btn" id="back-btn">◀</div>
+            <div class="icon-btn" id="keyboard-btn">⌨️</div>
+            <div class="icon-btn" id="forward-btn">▶</div>
+            <div class="icon-btn" id="vol-up-btn">🔊</div>
+        </div>
+        
+        <div class="controls-top">
+            <div class="icon-btn" id="arrow-left-btn">⬅️</div>
+            <div class="icon-btn" id="arrow-down-btn">⬇️</div>
+            <div class="icon-btn" id="arrow-up-btn">⬆️</div>
+            <div class="icon-btn" id="arrow-right-btn">➡️</div>
+        </div>
+
+        <div class="controls">
+            <div class="btn" id="btn-left">Left Click</div>
+            <div class="btn" id="btn-mid" style="flex: 0.5; display: flex; justify-content: center; align-items: center;">Mid</div>
+            <div class="btn" id="btn-right">Right Click</div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        const overlay = document.getElementById('overlay');
+        const trackpad = document.getElementById('trackpad');
+        const btnLeft = document.getElementById('btn-left');
+        const btnMid = document.getElementById('btn-mid');
+        const btnRight = document.getElementById('btn-right');
+        const arrowLeftBtn = document.getElementById('arrow-left-btn');
+        const arrowUpBtn = document.getElementById('arrow-up-btn');
+        const arrowDownBtn = document.getElementById('arrow-down-btn');
+        const arrowRightBtn = document.getElementById('arrow-right-btn');
+        const keyboardBtn = document.getElementById('keyboard-btn');
+        const backBtn = document.getElementById('back-btn');
+        const forwardBtn = document.getElementById('forward-btn');
+        const hiddenInput = document.getElementById('hidden-input');
+
+        // Settings elements
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettings = document.getElementById('close-settings');
+        const sensSlider = document.getElementById('sensitivity');
+        const sensVal = document.getElementById('sens-val');
+        const scrollSensSlider = document.getElementById('scroll-sensitivity');
+        const scrollSensVal = document.getElementById('scroll-sens-val');
+        const invertScrollToggle = document.getElementById('invert-scroll');
+        
+        // Apps elements
+        const appsBtn = document.getElementById('apps-btn');
+        const appsModal = document.getElementById('apps-modal');
+        const closeApps = document.getElementById('close-apps');
+        const appsList = document.getElementById('apps-list');
+        const newAppName = document.getElementById('new-app-name');
+        const newAppCmd = document.getElementById('new-app-cmd');
+        const addAppBtn = document.getElementById('add-app-btn');
+        
+        // PC Apps Picker elements
+        const browseAppsBtn = document.getElementById('browse-apps-btn');
+        const pcAppsModal = document.getElementById('pc-apps-modal');
+        const closePcApps = document.getElementById('close-pc-apps');
+        const pcAppsList = document.getElementById('pc-apps-list');
+        const pcAppsLoading = document.getElementById('pc-apps-loading');
+        const pcAppsSearch = document.getElementById('pc-apps-search');
+        let pcAppsData = []; // Store fetched apps for searching
+
+        const debugIndicator = document.getElementById('debug-indicator');
+
+        // State variables
+        let sensitivity = parseFloat(localStorage.getItem('pc_remote_sens')) || 1.5;
+        let scrollSensitivity = parseFloat(localStorage.getItem('pc_remote_scroll_sens')) || 1.0;
+        let invertScroll = localStorage.getItem('pc_remote_invert') === 'true';
+
+        // Default apps
+        const defaultApps = [
+            { id: 'chrome', name: '🌐 Browser', cmd: 'chrome' },
+            { id: 'explorer', name: '📁 Files', cmd: 'explorer' },
+            { id: 'calc', name: '🧮 Calc', cmd: 'calc.exe' },
+            { id: 'notepad', name: '📝 Notes', cmd: 'notepad.exe' }
+        ];
+
+        let customApps = JSON.parse(localStorage.getItem('pc_remote_apps')) || [];
+
+        function renderApps() {
+            appsList.innerHTML = '';
+            
+            // Render default apps
+            defaultApps.forEach(app => {
+                const item = document.createElement('div');
+                item.className = 'app-item';
+                item.innerHTML = `<span>${app.name}</span> <span style="font-size:1.5rem; padding: 0 10px;">🚀</span>`;
+                item.onclick = () => {
+                    socket.emit('open_app', { app: app.cmd });
+                    appsModal.classList.remove('active');
+                };
+                appsList.appendChild(item);
+            });
+
+            // Render custom apps
+            customApps.forEach(app => {
+                const item = document.createElement('div');
+                item.className = 'app-item';
+                
+                let iconHtml = `<span style="font-size:1.2rem; padding: 0 10px;">📱</span>`;
+                if (app.icon) {
+                    iconHtml = `<img src="${app.icon}" style="width: 24px; height: 24px; margin-right: 15px; border-radius: 4px;">`;
+                }
+
+                item.innerHTML = `
+                    <div style="display: flex; align-items: center; flex-grow: 1;">
+                        ${iconHtml}
+                        <span>${app.name}</span>
+                    </div>
+                    <span class="delete-app" data-id="${app.id}">✕</span>
+                `;
+                
+                // Allow clicking the text/icon to open
+                item.querySelector('div:first-child').onclick = () => {
+                    socket.emit('open_app', { app: app.cmd });
+                    appsModal.classList.remove('active');
+                };
+
+                // Allow clicking X to delete
+                item.querySelector('.delete-app').onclick = (e) => {
+                    e.stopPropagation();
+                    customApps = customApps.filter(a => a.id !== app.id);
+                    localStorage.setItem('pc_remote_apps', JSON.stringify(customApps));
+                    renderApps();
+                };
+
+                appsList.appendChild(item);
+            });
+        }
+
+        renderApps();
+
+        addAppBtn.addEventListener('click', () => {
+            const name = newAppName.value.trim();
+            const cmd = newAppCmd.value.trim();
+            if (name && cmd) {
+                customApps.push({
+                    id: 'app_' + Date.now(),
+                    name: name,
+                    cmd: cmd
+                });
+                localStorage.setItem('pc_remote_apps', JSON.stringify(customApps));
+                newAppName.value = '';
+                newAppCmd.value = '';
+                renderApps();
+            }
+        });
+
+        sensSlider.value = sensitivity;
+        sensVal.innerText = sensitivity.toFixed(1);
+        scrollSensSlider.value = scrollSensitivity;
+        scrollSensVal.innerText = scrollSensitivity.toFixed(1);
+        invertScrollToggle.checked = invertScroll;
+
+        // Function to update debug indicator
+        function updateDebug(touchCount) {
+            if (touchCount > 0) {
+                debugIndicator.style.display = 'block';
+                debugIndicator.innerText = `Active Touches: ${touchCount}`;
+            } else {
+                debugIndicator.style.display = 'none';
+            }
+        }
+
+        // Modals Listeners
+        const closeAppBtn = document.getElementById('close-app-btn');
+        closeAppBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('alt_f4');
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        settingsBtn.addEventListener('touchstart', () => settingsModal.classList.add('active'));
+        closeSettings.addEventListener('touchstart', () => settingsModal.classList.remove('active'));
+        
+        appsBtn.addEventListener('touchstart', () => appsModal.classList.add('active'));
+        closeApps.addEventListener('touchstart', () => appsModal.classList.remove('active'));
+
+        // PC Apps Picker Listeners
+        browseAppsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            pcAppsModal.classList.add('active');
+            pcAppsLoading.style.display = 'block';
+            pcAppsList.innerHTML = '';
+            pcAppsSearch.value = '';
+            socket.emit('get_pc_apps');
+        });
+
+        closePcApps.addEventListener('touchstart', () => pcAppsModal.classList.remove('active'));
+
+        pcAppsSearch.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            renderPcApps(pcAppsData.filter(app => app.name.toLowerCase().includes(query)));
+        });
+
+        socket.on('pc_apps_list', (apps) => {
+            pcAppsLoading.style.display = 'none';
+            pcAppsData = apps;
+            renderPcApps(apps);
+        });
+
+        function renderPcApps(apps) {
+            pcAppsList.innerHTML = '';
+            apps.forEach(app => {
+                const item = document.createElement('div');
+                item.className = 'app-item';
+                
+                let iconHtml = `<span style="font-size:1.2rem; color:var(--accent); margin-right: 15px;">+</span>`;
+                if (app.icon) {
+                    iconHtml = `<img src="${app.icon}" style="width: 24px; height: 24px; margin-right: 15px; border-radius: 4px;">`;
+                }
+
+                item.innerHTML = `
+                    <div style="display: flex; align-items: center; flex-grow: 1;">
+                        ${iconHtml}
+                        <span>${app.name}</span>
+                    </div>
+                    <span style="font-size:1.2rem; color:var(--accent);">+</span>
+                `;
+                
+                item.onclick = () => {
+                    // Instantly add it to the list!
+                    customApps.push({
+                        id: 'app_' + Date.now(),
+                        name: app.name,
+                        cmd: app.cmd,
+                        icon: app.icon
+                    });
+                    localStorage.setItem('pc_remote_apps', JSON.stringify(customApps));
+                    renderApps();
+                    
+                    pcAppsModal.classList.remove('active');
+                    // Add a tiny bit of haptic feedback on selection if available
+                    if(navigator.vibrate) navigator.vibrate(30);
+                };
+                pcAppsList.appendChild(item);
+            });
+        }
+
+        sensSlider.addEventListener('input', (e) => {
+            sensitivity = parseFloat(e.target.value);
+            sensVal.innerText = sensitivity.toFixed(1);
+            localStorage.setItem('pc_remote_sens', sensitivity);
+        });
+
+        scrollSensSlider.addEventListener('input', (e) => {
+            scrollSensitivity = parseFloat(e.target.value);
+            scrollSensVal.innerText = scrollSensitivity.toFixed(1);
+            localStorage.setItem('pc_remote_scroll_sens', scrollSensitivity);
+        });
+
+        invertScrollToggle.addEventListener('change', (e) => {
+            invertScroll = e.target.checked;
+            localStorage.setItem('pc_remote_invert', invertScroll);
+        });
+
+        socket.on('connect', () => {
+            overlay.classList.add('hidden');
+        });
+
+        socket.on('disconnect', () => {
+            overlay.classList.remove('hidden');
+            overlay.innerText = 'Disconnected. Reconnecting...';
+        });
+
+        // Touch handling variables
+        let lastTouches = {};
+        let threeFingerGestureStarted = false;
+        let threeFingerActionFired = false;
+        let altTabActive = false; // Tracks if the native Alt+Tab UI is open
+        let threeFingerStartX = 0;
+        let threeFingerStartY = 0;
+
+        // Trackpad Touch Start
+        trackpad.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent default browser behavior
+            updateDebug(e.targetTouches.length);
+
+            // If 3 fingers just landed, record the average position of all 3 fingers
+            if (e.targetTouches.length === 3) {
+                threeFingerGestureStarted = true;
+                threeFingerActionFired = false;
+
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < 3; i++) {
+                    sumX += e.targetTouches[i].clientX;
+                    sumY += e.targetTouches[i].clientY;
+                }
+                threeFingerStartX = sumX / 3;
+                threeFingerStartY = sumY / 3;
+            }
+
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                lastTouches[touch.identifier] = {
+                    x: touch.clientX,
+                    y: touch.clientY
+                };
+            }
+        }, { passive: false });
+
+        // Trackpad Touch Move
+        trackpad.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+
+            // 1 Finger: Mouse movement
+            if (e.targetTouches.length === 1 && !threeFingerGestureStarted) {
+                const touch = e.targetTouches[0];
+                
+                // If they are on their second tap and they start moving, it's a DRAG!
+                if (isSecondTapDown && !dragActive) {
+                    const curDist = Math.hypot(touch.clientX - touchStartPos.x, touch.clientY - touchStartPos.y);
+                    if (curDist > 5) { // crossed jitter threshold
+                        isSecondTapDown = false; // It's no longer just a double click
+                        dragActive = true;
+                        socket.emit('drag', { action: 'start' });
+                        if (navigator.vibrate) navigator.vibrate(30);
+                    }
+                    // Wait until drag is active to actually move the mouse if we're resolving the gesture
+                    if (!dragActive) {
+                        return; // Prevent small jitters before drag threshold
+                    }
+                }
+
+                const last = lastTouches[touch.identifier];
+
+                if (last) {
+                    const dx = touch.clientX - last.x;
+                    const dy = touch.clientY - last.y;
+
+                    // Send to server with user's sensitivity multiplier
+                    socket.emit('move', {
+                        dx: dx,
+                        dy: dy,
+                        sens: sensitivity
+                    });
+
+                    // Update last position
+                    lastTouches[touch.identifier] = {
+                        x: touch.clientX,
+                        y: touch.clientY
+                    };
+                }
+            }
+            // 2 Fingers: Scrolling
+            else if (e.targetTouches.length === 2 && !threeFingerGestureStarted) {
+                const touch1 = e.targetTouches[0];
+                const last1 = lastTouches[touch1.identifier];
+
+                if (last1) {
+                    // Only care about Y axis for scrolling
+                    const dy = touch1.clientY - last1.y;
+
+                    if (Math.abs(dy) > 2) { // Small threshold to avoid accidental scrolling
+                        // Apply invert logic
+                        const scrollDirection = invertScroll ? -1 : 1;
+
+                        socket.emit('scroll', { 
+                            dy: dy * scrollDirection,
+                            sens: scrollSensitivity 
+                        });
+
+                        lastTouches[touch1.identifier] = {
+                            x: touch1.clientX,
+                            y: touch1.clientY
+                        };
+                    }
+                }
+
+                const touch2 = e.targetTouches[1];
+                if (lastTouches[touch2.identifier]) {
+                    lastTouches[touch2.identifier] = {
+                        x: touch2.clientX,
+                        y: touch2.clientY
+                    };
+                }
+            }
+            // 3 Fingers: Swipe Gestures (Computed during move to beat Android OS interception)
+            else if (e.targetTouches.length === 3 && threeFingerGestureStarted) {
+                // Track the movement of the average center point (more stable for 3 fingers)
+                let sumX = 0, sumY = 0;
+                for (let i = 0; i < 3; i++) {
+                    sumX += e.targetTouches[i].clientX;
+                    sumY += e.targetTouches[i].clientY;
+                }
+                const currentX = sumX / 3;
+                const currentY = sumY / 3;
+
+                const dx = currentX - threeFingerStartX;
+                const dy = currentY - threeFingerStartY;
+
+                // Threshold to trigger swipe (smaller so it triggers before OS screenshot)
+                if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        // Horizontal Swipe: Precision Alt-Tab
+                        // Send start event if this is the first horizontal movement
+                        if (!altTabActive) {
+                            altTabActive = true;
+                            socket.emit('alt_tab', { action: 'start' });
+                        }
+
+                        // Emit a single tab step
+                        if (dx > 0) {
+                            socket.emit('alt_tab', { action: 'step', direction: 'right' });
+                        } else {
+                            socket.emit('alt_tab', { action: 'step', direction: 'left' });
+                        }
+
+                        // Reset the X start point so moving further repeatedly tabs
+                        threeFingerStartX = currentX;
+
+                    } else if (!threeFingerActionFired) {
+                        // Vertical Swipe (Win-D) - Only fire once per swipe gesture
+                        threeFingerActionFired = true;
+                        if (dy > 0) {
+                            socket.emit('swipe', { direction: 'down', fingers: 3 });
+                        } else {
+                            socket.emit('swipe', { direction: 'up', fingers: 3 });
+                        }
+                    }
+                    if (navigator.vibrate) navigator.vibrate(30);
+                }
+            }
+        }, { passive: false });
+
+        // Touch End / Cancel
+        const handleTouchEnd = (e) => {
+            e.preventDefault();
+            updateDebug(e.targetTouches.length);
+
+            // Reset 3 finger state if fingers are lifted
+            if (e.targetTouches.length < 3) {
+                // If the user was Alt-Tabbing, release the Alt key to select the window
+                if (altTabActive) {
+                    socket.emit('alt_tab', { action: 'stop' });
+                    altTabActive = false;
+                }
+                threeFingerGestureStarted = false;
+                threeFingerActionFired = false;
+            }
+
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                delete lastTouches[e.changedTouches[i].identifier];
+            }
+        };
+
+        trackpad.addEventListener('touchend', handleTouchEnd, { passive: false });
+        trackpad.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+        // Tap-to-click and Dragging on the trackpad
+        let touchStartTime = 0;
+        let touchStartPos = { x: 0, y: 0 };
+        let dragActive = false;
+        let lastTapTime = 0;
+        let isSecondTapDown = false;
+
+        trackpad.addEventListener('touchstart', (e) => {
+            if (e.targetTouches.length === 1 && !threeFingerGestureStarted) {
+                const now = Date.now();
+                if (now - lastTapTime < 300) {
+                    // Second tap down within the double-tap window!
+                    isSecondTapDown = true;
+                    touchStartPos = { x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY };
+                } else {
+                    // First tap down
+                    touchStartTime = now;
+                    touchStartPos = { x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY };
+                    isSecondTapDown = false;
+                }
+            }
+        });
+
+        trackpad.addEventListener('touchend', (e) => {
+            if (e.changedTouches.length === 1) {
+                const touchTime = Date.now() - touchStartTime;
+                const endPos = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+                const dist = Math.hypot(endPos.x - touchStartPos.x, endPos.y - touchStartPos.y);
+
+                if (dragActive) {
+                    // Lift finger to drop the dragged item
+                    dragActive = false;
+                    socket.emit('drag', { action: 'stop' });
+                } else if (isSecondTapDown) {
+                    // Lifted second tap quickly without dragging -> Double Click!
+                    // (Actually we can just send a regular click, and Windows will group it into a double click)
+                    // But sending `double: true` enforces it at the server level just in case.
+                    isSecondTapDown = false;
+                    socket.emit('click', { button: 'left', double: true });
+                    if (navigator.vibrate) navigator.vibrate(30);
+                    lastTapTime = 0; // reset
+                } else if (!threeFingerGestureStarted) {
+                    // First tap lifted. Is it a fast click?
+                    if (touchTime < 300 && dist < 10) {
+                        socket.emit('click', { button: 'left' });
+                        if (navigator.vibrate) navigator.vibrate(20);
+                        lastTapTime = Date.now();
+                    }
+                }
+            }
+        });
+
+        // Dedicated Buttons
+        btnLeft.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'start' });
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+        
+        btnLeft.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop' });
+        });
+
+        btnLeft.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop' });
+        });
+
+        btnRight.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'start', button: 'right' });
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        btnRight.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop', button: 'right' });
+        });
+
+        btnRight.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop', button: 'right' });
+        });
+
+        // Middle Click
+        btnMid.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'start', button: 'middle' });
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        btnMid.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop', button: 'middle' });
+        });
+
+        btnMid.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            socket.emit('drag', { action: 'stop', button: 'middle' });
+        });
+
+        // Arrow Buttons
+        const setupArrowBtn = (btn, dir) => {
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                socket.emit('arrow', { direction: dir });
+                if (navigator.vibrate) navigator.vibrate(30);
+            });
+        };
+        setupArrowBtn(arrowUpBtn, 'up');
+        setupArrowBtn(arrowDownBtn, 'down');
+        setupArrowBtn(arrowLeftBtn, 'left');
+        setupArrowBtn(arrowRightBtn, 'right');
+
+        // Navigation Buttons
+        backBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('nav', { direction: 'back' });
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        forwardBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('nav', { direction: 'forward' });
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        // Media Panel Logic
+        const mediaPanel = document.getElementById('media-panel');
+        const mediaHeader = document.getElementById('media-panel-header');
+        const mediaChevron = document.getElementById('media-chevron');
+
+        mediaHeader.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            mediaPanel.classList.toggle('expanded');
+            if (mediaPanel.classList.contains('expanded')) {
+                mediaChevron.style.transform = 'rotate(180deg)';
+                localStorage.setItem('pc_remote_media_open', 'true');
+            } else {
+                mediaChevron.style.transform = 'rotate(0deg)';
+                localStorage.setItem('pc_remote_media_open', 'false');
+            }
+        });
+
+        // Restore media panel state
+        if (localStorage.getItem('pc_remote_media_open') === 'true') {
+            mediaPanel.classList.add('expanded');
+            mediaChevron.style.transform = 'rotate(180deg)';
+        }
+
+        // Setup Media Buttons
+        const setupMediaBtn = (id, event_name, payload) => {
+            const btn = document.getElementById(id);
+            if(btn) {
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    socket.emit(event_name, payload);
+                    if (navigator.vibrate) navigator.vibrate(30);
+                });
+            }
+        };
+
+        setupMediaBtn('media-prev-btn', 'media', { action: 'previous track' });
+        setupMediaBtn('media-play-btn', 'media', { action: 'play/pause media' });
+        setupMediaBtn('media-next-btn', 'media', { action: 'next track' });
+        setupMediaBtn('media-mute-btn', 'media', { action: 'volume mute' });
+        
+        // Video specific keys (sends direct character strokes for YouTube/VLC)
+        setupMediaBtn('vid-rewind-btn', 'type', { key: 'j' });
+        setupMediaBtn('vid-fs-btn', 'type', { key: 'f' });
+        setupMediaBtn('vid-forward-btn', 'type', { key: 'l' });
+
+        // Volume Buttons
+        const volDownBtn = document.getElementById('vol-down-btn');
+        const volUpBtn = document.getElementById('vol-up-btn');
+
+        volDownBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('volume', { action: 'down' });
+            if (navigator.vibrate) navigator.vibrate(30);
+        });
+
+        volUpBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('volume', { action: 'up' });
+            if (navigator.vibrate) navigator.vibrate(30);
+        });
+
+        // Keyboard Handling
+        // Tap keyboard button to show native keyboard
+        keyboardBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            hiddenInput.focus();
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        // Trackpad tap also hides keyboard if it's open
+        trackpad.addEventListener('touchstart', () => {
+            hiddenInput.blur();
+        });
+
+        // Capture typed characters
+        hiddenInput.addEventListener('input', (e) => {
+            const val = hiddenInput.value;
+            // The value contains the newly typed character(s)
+            if (e.inputType === 'insertText' || e.inputType === 'insertCompositionText') {
+                if (e.data) {
+                    // Send strictly the new character(s)
+                    socket.emit('type', { key: e.data });
+                }
+            } else if (val.length > 0) {
+                // Fallback for older browsers
+                const char = val[val.length - 1];
+                socket.emit('type', { key: char });
+            }
+
+            // Immediately clear the input so characters don't build up
+            hiddenInput.value = '';
+        });
+
+        // Capture special keys (Backspace, Enter)
+        hiddenInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace') {
+                socket.emit('type', { key: 'backspace' });
+                // Clear the input just in case there's a phantom character
+                hiddenInput.value = '';
+            } else if (e.key === 'Enter') {
+                socket.emit('type', { key: 'enter' });
+            }
+        });
+
+        // Extra Controls (Copy/Paste)
+        const moreActionsBtn = document.getElementById('more-actions-btn');
+        const extraControls = document.getElementById('extra-controls');
+        const copyBtn = document.getElementById('copy-btn');
+        const pasteBtn = document.getElementById('paste-btn');
+
+        moreActionsBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            extraControls.classList.toggle('active');
+            if (navigator.vibrate) navigator.vibrate(30);
+        });
+
+        copyBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('copy');
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        pasteBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            socket.emit('paste');
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/service-worker.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker failed:', err));
+            });
+        }
+    </script>
+</body>
+
+</html>
+```

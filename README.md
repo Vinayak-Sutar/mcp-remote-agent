@@ -86,10 +86,6 @@ ollama pull mistral
 
 Launch the standalone chat UI to test operations directly on your PC.
 
-<p align="center">
-  <img src="assets/chat_interface.png" alt="Desktop UI Screenshot" width="600"/>
-</p>
-
 ```bash
 # We've provided a simple startup script
 ./start_chat_interface.sh

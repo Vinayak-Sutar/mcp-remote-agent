@@ -11,7 +11,6 @@ This project bridges the gap between conversational AI, manual remote control in
 ### 🤖 Automation & Autonomous Tools
 * **AI Tool Orchestration**: Uses local Mistral models via Ollama to map conversational intents to direct python functions.
 * **Automated Media Playback**: Don't just search for songs; the agent utilizes headless HTML scraping to fetch YouTube IDs and auto-plays media instantly.
-* **Robust JSON Extraction**: Implements a robust regex logic fallback system that forcibly captures tool-call arrays even when the LLM hallucinates conversational plain text.
 
 ### 📱 Full Remote PC Control (Web App)
 Alongside the AI agent, the local network server provides a comprehensive remote control suite directly on your phone:

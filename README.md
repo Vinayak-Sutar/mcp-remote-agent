@@ -1,12 +1,14 @@
 # MCP Remote Agent
 
-A powerful, cross-platform local AI agent built using the **Model Context Protocol (MCP)** and local LLMs (**Ollama/Mistral**) to autonomously execute Operating System-level tasks and manage media.
+A powerful local AI agent built using the **Model Context Protocol (MCP)** and local LLMs (**Ollama/Mistral**) to autonomously execute Operating System-level tasks and manage media.
+
+*Note: This agent is currently optimized for **Ubuntu Linux**. Windows support is planned for future updates.*
 
 This project bridges the gap between conversational AI and functional OS execution. Instead of just answering questions, the agent dynamically parses natural language (both text and voice dictation), decides which system-level tool is needed, and invokes it seamlessly using an MCP Server-Client architecture.
 
 ## 🚀 Key Features
 
-* **Real System Manipulation**: Adjust settings like master volume or screen brightness dynamically using Wayland and X11 interfaces without opening system menus.
+* **Real System Manipulation**: Adjust system settings like master volume dynamically using ALSA/PulseAudio interfaces without opening system menus.
 * **Automated Media Playback**: Don't just search for songs; the agent utilizes headless HTML scraping to fetch YouTube IDs and auto-plays media instantly.
 * **Local, Private, \& Free**: Powered entirely by `Ollama` and `Mistral:latest`. No API limits, no subscription fees, and no data leaving your local machine.
 * **Dual Interface Architecture**: 
@@ -28,9 +30,9 @@ This project is divided into three core architectural layers:
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
+* Ubuntu / Linux OS
 * Python 3.10+
 * Local installation of [Ollama](https://ollama.com/) 
-* `xrandr` (For Linux display control)
 * Pulseaudio / ALSA mappings (For Linux volume control)
 
 ### 1. Clone & Environment
@@ -67,7 +69,7 @@ Launch the standalone chat UI to test operations directly on your PC.
 **Try typing commands like:**
 * *"Can you set my volume to 80 percent?"*
 * *"Play Numb by Linkin Park on YouTube."*
-* *"My screen is too bright, make it 30."*
+* *"Search for Python tutorials on YouTube."*
 
 ### Method B: The Local Voice Server (Web App)
 Allows you to control your PC by speaking into your mobile phone while on the same Wi-Fi network.
@@ -76,6 +78,8 @@ Allows you to control your PC by speaking into your mobile phone while on the sa
 ```bash
 openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365
 ```
+*(Note: Do not commit the generated .pem files to public repositories)*
+
 **2. Start the Server**
 ```bash
 ./run_web_server.sh
